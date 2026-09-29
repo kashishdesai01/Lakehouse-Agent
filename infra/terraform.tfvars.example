@@ -1,0 +1,2 @@
+prefix   = "lhagentyourname"   # lowercase letters/digits, globally unique (used for the storage account name)
+location = "eastus2"

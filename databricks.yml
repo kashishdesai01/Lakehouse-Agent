@@ -1,0 +1,79 @@
+# Databricks Asset Bundle for the lakehouse pipeline and evaluation workflow.
+# Deploy:  databricks bundle validate && databricks bundle deploy -t dev && databricks bundle run lakehouse_agent_job -t dev
+bundle:
+  name: lakehouse-agent
+
+artifacts:
+  lakehouse_agent_whl:
+    type: whl
+    build: python -m build --wheel
+    path: .
+
+variables:
+  catalog:
+    default: main
+  schema:
+    default: lakehouse_agent
+  raw_dir:
+    description: UC volume or abfss:// path used for raw extracts and docs
+    default: /Volumes/main/lakehouse_agent/raw
+  llm_model:
+    description: Model Serving endpoint name used by the eval task (only when llm=openai)
+    default: ""
+
+resources:
+  jobs:
+    lakehouse_agent_job:
+      name: lakehouse-agent-${bundle.target}
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+            dependencies:
+              - ./dist/*.whl
+      tasks:
+        - task_key: seed
+          environment_key: default
+          python_wheel_task:
+            package_name: lakehouse_agent
+            entry_point: lh-seed
+            parameters: ["--out-dir", "${var.raw_dir}"]
+        - task_key: medallion
+          depends_on: [{task_key: seed}]
+          environment_key: default
+          python_wheel_task:
+            package_name: lakehouse_agent
+            entry_point: lh-pipeline
+            parameters: ["--raw-dir", "${var.raw_dir}", "--storage-mode", "uc",
+                         "--catalog", "${var.catalog}", "--schema", "${var.schema}"]
+        - task_key: evaluate
+          depends_on: [{task_key: medallion}]
+          environment_key: default
+          python_wheel_task:
+            package_name: lakehouse_agent
+            entry_point: lh-eval
+            parameters: ["--raw-dir", "${var.raw_dir}", "--golden", "${var.raw_dir}/golden.jsonl",
+                         "--storage-mode", "uc", "--catalog", "${var.catalog}", "--schema", "${var.schema}",
+                         "--experiment", "/Shared/lakehouse-agent-eval"]
+
+  pipelines:
+    lakehouse_dlt:
+      name: lakehouse-agent-dlt-${bundle.target}
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      libraries:
+        - file:
+            path: src/lakehouse_agent/dlt_pipeline.py
+      environment:
+        dependencies:
+          - ./dist/*.whl
+      configuration:
+        raw_dir: ${var.raw_dir}
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: ${DATABRICKS_HOST}
