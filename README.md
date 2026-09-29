@@ -87,14 +87,3 @@ lh-eval --raw-dir /tmp/lh/raw --golden /tmp/lh/raw/golden.jsonl --root /tmp/lh/l
 On Databricks: `terraform -chdir=infra apply`, then `databricks bundle deploy -t dev` and
 `databricks bundle run lakehouse_agent_job -t dev` (Unity Catalog mode is `--storage-mode uc`).
 
-## Design decisions worth explaining
-
-- **Safety is structural.** The SQL tool parses with sqlglot and accepts exactly one SELECT over an allow-list of
-  gold tables; the destructive-query test shows the table is untouched. It does not rely on prompt wording.
-- **Nothing is silently dropped.** Rule failures go to `quarantine_*` with the failing rule names; every stage
-  writes counts to `ops_pipeline_run_log`.
-- **Same rules, two runtimes.** Expectations are SQL predicate dicts used by the local runner and by
-  `dlt.expect_all_or_drop`, so they cannot drift apart.
-- **Independent oracle.** Expected answers come from a separate pandas implementation, so a bug in the Spark
-  transforms shows up as an eval failure instead of being baked into the expected values.
-- **Known limits.** Fixed FX rates, TF-IDF retrieval locally, single-node Spark in tests, synthetic data.
